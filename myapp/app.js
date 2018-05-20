@@ -36,7 +36,8 @@ app.get('/entity/:id', function (req, res) {
 
 app.post('/entity', function (req, res) {
 
-    var id = req.body.id;
+    let id = req.body.id;
+
     if(id in entity_dict ){
         res.status(400).end("Invalid request. ID already exists");
         return;
@@ -62,9 +63,10 @@ app.post('/entity', function (req, res) {
 
 app.get('/entities-around', function (req, res) {
 
-    var input = req.query;
-    var MAX_PER_PAGE = 50;
-    var entities_in_range_dict = {};
+    let input = req.query;
+    const MAX_PER_PAGE = 50;
+    let entities_in_range_dict = {};
+
     if (!(basicFunctions.containsFieldAsNumber(input,'latitude'))){
         res.status(400).end("Invalid input. Input must contain latitude as a number.");
         return;
@@ -84,10 +86,10 @@ app.get('/entities-around', function (req, res) {
 
 app.get('/entities-in-bearing', function (req, res) {
 
-    var input = req.query;
-    var counter = 0;
-    var MAX_PER_PAGE = 50;
-    var entities_in_range_dict ={};
+    let input = req.query;
+    let counter = 0;
+    const MAX_PER_PAGE = 50;
+    let entities_in_range_dict ={};
 
     if(!(basicFunctions.containsFieldAsNumber(input,'latitude'))){
         res.status(400).end("Invalid input. Input must include latitude as a number.");
@@ -113,14 +115,14 @@ app.get('/entities-in-bearing', function (req, res) {
         entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, entity_dict, MAX_PER_PAGE);
     }
     else{
-        var min_bearing = input.minBearing * 1.0;
-        var max_bearing = input.maxBearing * 1.0;
+        let min_bearing = input.minBearing * 1.0;
+        let max_bearing = input.maxBearing * 1.0;
 
         for (var key in entity_dict){
             if(counter == MAX_PER_PAGE){
                 break;
             }
-            if(geographicFunctions.computeDistance(input, entity_dict[key])<input['radius']*1.0){
+            if(geographicFunctions.computeDistance(input, entity_dict[key])<input.radius*1.0){
                 var brng = geographicFunctions.computeBearing(input ,entity_dict[key]);
                 if(geographicFunctions.BearingBetweenMinToMax(brng, min_bearing, max_bearing)){
                     counter++;
@@ -135,10 +137,11 @@ app.get('/entities-in-bearing', function (req, res) {
 
 app.get('/closest-entity', function (req, res) {
 
-    var input = req.query;
-    var counter = 0;
-    var closest_entity_id = undefined;
-    
+    let input = req.query;
+    let counter = 0;
+    let closest_entity_id = undefined;
+    let closest_entity = {};
+
     if(!(('latitude' in input && 'longitude' in input) || 'id' in input)){
         res.status(400).end("Invalid input. Must have latitude and longitude fields or id field.");
         return;
@@ -148,7 +151,7 @@ app.get('/closest-entity', function (req, res) {
             res.status(400).end("Ambiguous input. Must have latitude and longitude fields or id field, not both.");
             return;
         }
-        var closest_entity_id = geographicFunctions.findClosestID(input,entity_dict);
+        closest_entity_id = geographicFunctions.findClosestID(input,entity_dict);
     }
     else if('latitude' in input || "longitude" in input){
         res.status(400).end("Invalid input. Must have both latitude and longitude as numbers.");
@@ -163,7 +166,6 @@ app.get('/closest-entity', function (req, res) {
         closest_entity_id = geographicFunctions.findClosestIDToID(entity_dict, input['id']);
     }
     
-    var closest_entity = {};
     closest_entity[closest_entity_id] = entity_dict[closest_entity_id];
     res.end(JSON.stringify(closest_entity));
 

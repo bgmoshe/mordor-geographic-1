@@ -1,66 +1,74 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var basicFunctions = require('./basic-functions');
-var geographicFunctions = require('./geographic-functions');
-var app = express();
+const createError = require('http-errors');
+const express = require('express');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const logger = require('morgan');
+const basicFunctions = require('./basic-functions');
+const geographicFunctions = require('./geographic-functions');
+const httpStatus = require('http-status-codes');
+const app = express();
 
-entity_dict = {};
-
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'pug');
+//entities db
+entity_dict = {}; 
 
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
+//This route returns JSON of all the entities
 app.get('/entities', function (req, res) {
-    res.end( JSON.stringify(entity_dict)) ;
+    res.status(httpStatus.CREATED);
+    res.json(entity_dict);
 });
 
+//This route returns JSON of an entity with the id :id.
 app.get('/entity/:id', function (req, res) {
 
     if(!(req.params.id in entity_dict)){
-        res.status(404).end("No such ID exists. Try another one!");
+        res.status(httpStatus.NOT_FOUND).send("No such ID exists. Try another one!");
         return;
     }
-    res.status(201).end(JSON.stringify(entity_dict[req.params.id]));
+    res.status(httpStatus.CREATED);
+    res.json(entity_dict[req.params.id]);
 
 });
 
-
+//This route gets an entity to be entered into the entities db.
+//The entity must follow the following rules:
+//   *The given entity must have latitude, longitude and altitude.
+//   *The new entity's id must not already exist.
+//If it does we return text response "Finished" with status of httpStatus.CREATED. Otherwise we return status httpStatus.BAD_REQUEST and failure text.
 app.post('/entity', function (req, res) {
 
     let id = req.body.id;
-
+    
     if(id in entity_dict ){
-        res.status(400).end("Invalid request. ID already exists");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid request. ID already exists");
         return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(req.body,'latitude'))){
-       res.status(400).end("Invalid request. Must contain latitude field as a number");
+       res.status(httpStatus.BAD_REQUEST).send("Invalid request. Must contain latitude field as a number");
        return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(req.body,'longitude'))){
-       res.status(400).end("Invalid request. Must contain longitude field as a number");
+       res.status(httpStatus.BAD_REQUEST).send("Invalid request. Must contain longitude field as a number");
        return;
     }
     else if (!(basicFunctions.containsFieldAsNumber(req.body,'altitude'))){
-       res.status(400).end("Invalid request. Must contain altitude field as a number");
+       res.status(httpStatus.BAD_REQUEST).send("Invalid request. Must contain altitude field as a number");
        return;
     }
+    
     delete(req.body.id);
-    entity_dict[id] = (req.body);
-    res.location("/entity/"+id)
-    res.status(201).end("Finished");
+    entity_dict[id] = req.body;
+    res.location("/entity/"+id);
+    res.status(httpStatus.CREATED).send("Finished");
 
 });
-
+//This route gets latitude, longitude and radius.
+//It returns JSON of all the entities that are in the given radius from the geographic coordinates.
+//Also, we limit the page size (i.e. the number of entities we return) to be 50.
 app.get('/entities-around', function (req, res) {
 
     let input = req.query;
@@ -68,22 +76,27 @@ app.get('/entities-around', function (req, res) {
     let entities_in_range_dict = {};
 
     if (!(basicFunctions.containsFieldAsNumber(input,'latitude'))){
-        res.status(400).end("Invalid input. Input must contain latitude as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must contain latitude as a number.");
         return;
     }
     else if (!(basicFunctions.containsFieldAsNumber(input,'longitude'))){
-        res.status(400).end("Invalid input. Input must contain longitude as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must contain longitude as a number.");
         return;
     }
     else if (!(basicFunctions.containsFieldAsNumber(input,'radius') || parseFloat(input.radius)<0)){
-        res.status(400).end("Invalid input. Input must contain non-negtive radius.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must contain non-negtive radius.");
         return;
     }
-    entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, entity_dict, MAX_PER_PAGE);  
-    res.end(JSON.stringify(entities_in_range_dict))
+    entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, input.radius*1.0, entity_dict, MAX_PER_PAGE);
+    
+    res.json(entities_in_range_dict);
 
 });
 
+//This route gets latitude, longitude, radius, minimum bearing and maximum bearing.
+//It returns JSON of all the entities that are in the given radius from the geographic coordinates,
+// such that their bearing from the coordinates are between the given minimum and maximum.
+//Also, we limit the page size (i.e. the number of entities we return) to be 50.
 app.get('/entities-in-bearing', function (req, res) {
 
     let input = req.query;
@@ -92,103 +105,101 @@ app.get('/entities-in-bearing', function (req, res) {
     let entities_in_range_dict ={};
 
     if(!(basicFunctions.containsFieldAsNumber(input,'latitude'))){
-        res.status(400).end("Invalid input. Input must include latitude as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must include latitude as a number.");
         return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(input,'longitude'))){
-        res.status(400).end("Invalid input. Input must include longitude as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must include longitude as a number.");
         return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(input,'radius')) || parseFloat(input.radius)<0){
-        res.status(400).end("Invalid input. Input must include radius as a non-negative number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must include radius as a non-negative number.");
         return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(input,'minBearing'))){
-        res.status(400).end("Invalid input. Input must include minBearing as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must include minBearing as a number.");
         return;
     }
     else if(!(basicFunctions.containsFieldAsNumber(input,'maxBearing'))){
-        res.status(400).end("Invalid input. Input must include maxBearing as a number.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must include maxBearing as a number.");
         return;
     }
+    // If the difference minBearing and maxBearing is at least 2*pi,
+    // it is equivalent to get all the entities in range.
     if(Math.abs(input.minBearing*1.0 - input.maxBearing*1.0) >= 2*Math.PI){
-        entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, entity_dict, MAX_PER_PAGE);
+        entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, input.radius, entity_dict, MAX_PER_PAGE);
     }
     else{
-        let min_bearing = input.minBearing * 1.0;
-        let max_bearing = input.maxBearing * 1.0;
-
         for (var key in entity_dict){
-            if(counter == MAX_PER_PAGE){
-                break;
-            }
+            if(counter >= MAX_PER_PAGE) {break;}
             if(geographicFunctions.computeDistance(input, entity_dict[key])<input.radius*1.0){
-                var brng = geographicFunctions.computeBearing(input ,entity_dict[key]);
-                if(geographicFunctions.BearingBetweenMinToMax(brng, min_bearing, max_bearing)){
+                var bearing = geographicFunctions.computeBearing(input ,entity_dict[key]);
+                if(geographicFunctions.BearingBetweenMinToMax(bearing, input.minBearing * 1.0, input.maxBearing * 1.0)){
                     counter++;
                     entities_in_range_dict[key] = entity_dict[key];
                 }
             }
         }
     }
-    res.end(JSON.stringify(entities_in_range_dict));
+    res.json(entities_in_range_dict);
 
 });
 
+//This route can get either latitude and longitude or an id.
+//It returns JSON of the entity that is the most close to the input.
+//If the input is id, the result will be entity with a different id (if such entity exists).
 app.get('/closest-entity', function (req, res) {
 
     let input = req.query;
     let counter = 0;
     let closest_entity_id = undefined;
     let closest_entity = {};
-
+    
     if(!(('latitude' in input && 'longitude' in input) || 'id' in input)){
-        res.status(400).end("Invalid input. Must have latitude and longitude fields or id field.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Must have latitude and longitude fields or id field.");
         return;
     }
+    
     if(basicFunctions.containsFieldAsNumber(input,'latitude')&& basicFunctions.containsFieldAsNumber(input,'longitude')){
         if('id' in input){
-            res.status(400).end("Ambiguous input. Must have latitude and longitude fields or id field, not both.");
+            res.status(httpStatus.BAD_REQUEST).send("Ambiguous input. Must have latitude and longitude fields or id field, not both.");
             return;
         }
-        closest_entity_id = geographicFunctions.findClosestID(input,entity_dict);
+        closest_entity_id = geographicFunctions.findClosestID(input, entity_dict, []);
     }
     else if('latitude' in input || "longitude" in input){
-        res.status(400).end("Invalid input. Must have both latitude and longitude as numbers.");
+        res.status(httpStatus.BAD_REQUEST).send("Invalid input. Must have both latitude and longitude as numbers.");
         return;
     }
-
-    else if(!(input['id'] in entity_dict)){
-        res.status(400).end("Invalid. No entity has id "+input['id']);
+    else if(!(input.id in entity_dict)){
+        res.status(httpStatus.BAD_REQUEST).send("Invalid. No entity has id "+input.id);
         return;
     }
     else{
-        closest_entity_id = geographicFunctions.findClosestIDToID(entity_dict, input['id']);
+        closest_entity_id = geographicFunctions.findClosestID(entity_dict[input.id], entity_dict, [input.id]);
     }
     
     closest_entity[closest_entity_id] = entity_dict[closest_entity_id];
-    res.end(JSON.stringify(closest_entity));
+    res.json(closest_entity);
 
 });
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
 
-    next(createError(404));
+    next(createError(httpStatus.NOT_FOUND));
 
 });
 
 // error handler
 app.use(function(err, req, res, next) {
 
-    //set locals, only providing error in development
     res.locals.message = err.message;
-    res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-    //render the error page
+    res.locals.error = err;
+    console.error(err.stack);
+    
+    //Ask ziv how to handle the error(?)
     res.status(err.status || 500);
-    res.render('error');
-
 });
 
 module.exports = app;

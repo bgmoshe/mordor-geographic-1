@@ -9,7 +9,7 @@ const httpStatus = require('http-status-codes');
 const app = express();
 
 //entities db
-entity_dict = {}; 
+var entity_dict = {}; 
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -18,7 +18,7 @@ app.use(cookieParser());
 
 //This route returns JSON of all the entities
 app.get('/entities', function (req, res) {
-    res.status(httpStatus.CREATED);
+    res.status(httpStatus.OK);
     res.json(entity_dict);
 });
 
@@ -29,7 +29,7 @@ app.get('/entity/:id', function (req, res) {
         res.status(httpStatus.NOT_FOUND).send("No such ID exists. Try another one!");
         return;
     }
-    res.status(httpStatus.CREATED);
+    res.status(httpStatus.OK);
     res.json(entity_dict[req.params.id]);
 
 });
@@ -44,9 +44,14 @@ app.post('/entity', function (req, res) {
     let id = req.body.id;
     
     if(id in entity_dict ){
-        res.status(httpStatus.BAD_REQUEST).send("Invalid request. ID already exists");
+        res.status(httpStatus.CONFLICT).send("Invalid request. ID already exists");
         return;
     }
+    else if(!('id' in req.body)){
+       res.status(httpStatus.BAD_REQUEST).send("Invalid request. Must contain id field");
+       return;
+    }
+    
     else if(!(basicFunctions.containsFieldAsNumber(req.body,'latitude'))){
        res.status(httpStatus.BAD_REQUEST).send("Invalid request. Must contain latitude field as a number");
        return;
@@ -66,6 +71,42 @@ app.post('/entity', function (req, res) {
     res.status(httpStatus.CREATED).send("Finished");
 
 });
+
+//This route gets fields to update.
+//If there exists entity s.t. entity.id=id, then we updates its field according to the body of the request.
+app.post('/entity/:id', function (req,res){
+    
+    let id = req.params.id;
+    let modified_fields = req.body;
+
+    if(!(id in entity_dict)){
+        res.status(httpStatus.NOT_FOUND).send("Cannot modify since ID does not exist");
+    }
+
+    for (let field in modified_fields){
+        let updated_field_value = modified_fields[field];
+        entity_dict[id][field] = updated_field_value;
+    }
+    
+    res.location("/entity/"+id);
+    res.status(httpStatus.OK).send("Finished");
+
+});
+
+//This route delete an entity s.t. entity.id=id, if it exists.
+app.delete('/entity/:id', function (req,res){
+    
+    let id = req.params.id;
+    
+    if(!(id in entity_dict)){
+        res.status(httpStatus.NOT_FOUND);
+        res.send("Cannot delete since ID does not exist");
+    }
+    delete(entity_dict[id]);
+    res.status(httpStatus.NO_CONTENT);
+    res.send("Removed id="+id+" successfully");
+});
+
 //This route gets latitude, longitude and radius.
 //It returns JSON of all the entities that are in the given radius from the geographic coordinates.
 //Also, we limit the page size (i.e. the number of entities we return) to be 50.
@@ -83,10 +124,11 @@ app.get('/entities-around', function (req, res) {
         res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must contain longitude as a number.");
         return;
     }
-    else if (!(basicFunctions.containsFieldAsNumber(input,'radius') || parseFloat(input.radius)<0)){
+    else if (!(basicFunctions.containsFieldAsNumber(input,'radius') && parseFloat(input.radius)>=0)){
         res.status(httpStatus.BAD_REQUEST).send("Invalid input. Input must contain non-negtive radius.");
         return;
     }
+    
     entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, input.radius*1.0, entity_dict, MAX_PER_PAGE);
     
     res.json(entities_in_range_dict);
@@ -130,10 +172,10 @@ app.get('/entities-in-bearing', function (req, res) {
         entities_in_range_dict = geographicFunctions.getEntitiesInRange(input, input.radius, entity_dict, MAX_PER_PAGE);
     }
     else{
-        for (var key in entity_dict){
+        for (let key in entity_dict){
             if(counter >= MAX_PER_PAGE) {break;}
             if(geographicFunctions.computeDistance(input, entity_dict[key])<input.radius*1.0){
-                var bearing = geographicFunctions.computeBearing(input ,entity_dict[key]);
+                let bearing = geographicFunctions.computeBearing(input ,entity_dict[key]);
                 if(geographicFunctions.BearingBetweenMinToMax(bearing, input.minBearing * 1.0, input.maxBearing * 1.0)){
                     counter++;
                     entities_in_range_dict[key] = entity_dict[key];
@@ -172,7 +214,7 @@ app.get('/closest-entity', function (req, res) {
         return;
     }
     else if(!(input.id in entity_dict)){
-        res.status(httpStatus.BAD_REQUEST).send("Invalid. No entity has id "+input.id);
+        res.status(httpStatus.NOT_FOUND).send("Invalid. No entity has id "+input.id);
         return;
     }
     else{
@@ -197,8 +239,6 @@ app.use(function(err, req, res, next) {
     res.locals.message = err.message;
     res.locals.error = err;
     console.error(err.stack);
-    
-    //Ask ziv how to handle the error(?)
     res.status(err.status || 500);
 });
 
